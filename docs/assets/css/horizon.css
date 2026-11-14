@@ -71,6 +71,14 @@ h1, h2, h3, h4, h5, h6 {
   color: #fff !important;
 }
 
+/* Cayman sizes the page title for desktop; long Chinese digest titles wrap
+   awkwardly on a phone. Scale the header with the viewport instead. */
+.page-header .project-name {
+  font-size: clamp(1.4rem, 6vw, 2.6rem);
+  line-height: 1.2;
+  word-break: break-word;
+}
+
 /* --- Score Badge --- */
 .score-badge {
   display: inline-block;
