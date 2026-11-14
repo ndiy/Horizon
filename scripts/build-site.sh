@@ -131,6 +131,9 @@ main() {
   local previous
   previous=$(current_release)
   if [ "$INITIAL_ONLY" -eq 1 ] && [ -n "$previous" ]; then
+    # A release published before the mode fix is owner-only and unreadable by a
+    # separate web-server uid; the skip must still leave the site servable.
+    chmod 0755 "$previous" 2>/dev/null || true
     echo "site already published at ${previous#"$SITE_DIR"/}; initial build skipped"
     return 0
   fi
