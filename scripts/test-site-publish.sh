@@ -10,6 +10,7 @@ TEMPLATE_DIR="${HORIZON_TEMPLATE_DIR:-/opt/horizon/docs}"
 GEMFILE="${HORIZON_GEMFILE:-/opt/horizon/Gemfile}"
 BUILD_SCRIPT="${HORIZON_BUILD_SITE:-/opt/horizon/scripts/build-site.sh}"
 VERIFY_SCRIPT="${HORIZON_VERIFY_POSTS:-/opt/horizon/scripts/verify-posts.rb}"
+FEED_SCRIPT="${HORIZON_FEED_ENTRIES:-/opt/horizon/scripts/feed-entries.rb}"
 
 WORK=$(mktemp -d "${TMPDIR:-/tmp}/horizon-site-test.XXXXXX")
 SITE="$WORK/site"
@@ -23,6 +24,7 @@ trap cleanup EXIT
 export HORIZON_TEMPLATE_DIR="$TEMPLATE_DIR"
 export HORIZON_GEMFILE="$GEMFILE"
 export HORIZON_VERIFY_POSTS="$VERIFY_SCRIPT"
+export HORIZON_FEED_ENTRIES="$FEED_SCRIPT"
 
 fail() { echo "FAIL: $*" >&2; exit 1; }
 
@@ -49,15 +51,7 @@ write_pair() { # <date>
 }
 
 feed_entries() { # <feed path> -> prints "title<TAB>link" per entry, fails on invalid XML
-  python3 - "$1" <<'PY'
-import sys, xml.etree.ElementTree as ET
-ns = {"a": "http://www.w3.org/2005/Atom"}
-root = ET.parse(sys.argv[1]).getroot()
-for entry in root.findall("a:entry", ns):
-    title = (entry.findtext("a:title", default="", namespaces=ns) or "").strip()
-    link = entry.find("a:link", ns)
-    print(title + "\t" + (link.attrib.get("href", "") if link is not None else ""))
-PY
+  ruby "$FEED_SCRIPT" "$1"
 }
 
 # --- 1. empty state -------------------------------------------------------
@@ -91,16 +85,21 @@ case "$link" in
   *) fail "feed entry link is not absolute HTTPS: $link" ;;
 esac
 post_path="$SITE/$second${link#https://horizon.great-wrasse.ts.net}"
-[ -f "${post_path%/}/index.html" ] || post_path="${post_path%/}.html"
+for candidate in "${post_path%/}/index.html" "${post_path%/}.html" "$post_path"; do
+  if [ -f "$candidate" ]; then post_path="$candidate"; break; fi
+done
 [ -f "$post_path" ] || fail "feed link $link does not resolve inside the release"
 if grep -qF 'layout: default' "$post_path"; then fail "front matter leaked into the post page"; fi
 if grep -qF '{{' "$post_path"; then fail "Liquid markup survived into the post page"; fi
 before="$second"
 
 # --- 3. broken post fails without touching the published release ----------
-echo "== invalid post date is rejected =="
-printf -- '---\nlayout: default\ntitle: "Bad"\ndate: not-a-date\nlang: zh\n---\n\nbad\n' > "$POSTS/bad-post.md"
-if build; then fail "build accepted an invalid post date"; fi
+echo "== a post that cannot render is rejected =="
+# Unbalanced Liquid makes Jekyll abort, which is the only post-level defect the
+# builder must never publish. A merely weird date or layout is normalized by
+# Jekyll itself and is not a build failure.
+printf -- '---\nlayout: default\ntitle: "Bad"\ndate: 2026-11-17\nlang: zh\n---\n\n{%% if %%}\n' > "$POSTS/2026-11-17-summary-zh.md"
+if build; then fail "build published a post Jekyll cannot render"; fi
 [ "$(current_target)" = "$before" ] || fail "current moved after a failed build"
 [ -f "$SITE/$before/index.html" ] || fail "previous release was destroyed"
 
@@ -121,7 +120,7 @@ build --initial-only
 
 # --- 6. retention keeps current + previous only ---------------------------
 echo "== release retention =="
-rm -f "$POSTS/bad-post.md" "$SUMMARIES/horizon-2026-11-15-zh.md"
+rm -f "$POSTS/2026-11-17-summary-zh.md" "$SUMMARIES/horizon-2026-11-15-zh.md"
 write_pair "2026-11-16"
 build --summaries-dir "$SUMMARIES"
 new=$(current_target)

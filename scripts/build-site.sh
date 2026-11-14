@@ -10,6 +10,7 @@ set -euo pipefail
 TEMPLATE_DIR="${HORIZON_TEMPLATE_DIR:-/opt/horizon/docs}"
 GEMFILE="${HORIZON_GEMFILE:-/opt/horizon/Gemfile}"
 VERIFY_SCRIPT="${HORIZON_VERIFY_POSTS:-/opt/horizon/scripts/verify-posts.rb}"
+GEM_PATH="${HORIZON_GEM_PATH:-/opt/horizon/.gems}"
 LOCK_TIMEOUT="${HORIZON_PUBLISH_LOCK_TIMEOUT:-900}"
 
 POSTS_DIR=""
@@ -55,9 +56,11 @@ mkdir -p "$RELEASES_DIR"
 
 WORK_DIR=$(mktemp -d "${TMPDIR:-/tmp}/horizon-site.XXXXXX")
 RELEASE_DIR=""
+PUBLISHED=0
 cleanup() {
-  # A release directory that never became current is scratch; keep it only on failure.
-  if [ -n "$RELEASE_DIR" ] && [ -d "$RELEASE_DIR" ] && [ ! -e "$RELEASE_DIR/published" ]; then
+  # Releases become durable only after they are current; anything still in
+  # RELEASE_DIR without PUBLISHED=1 is scratch from a failed run.
+  if [ "$PUBLISHED" -eq 0 ] && [ -n "$RELEASE_DIR" ] && [ -d "$RELEASE_DIR" ]; then
     rm -rf "$RELEASE_DIR"
   fi
   rm -rf "$WORK_DIR"
@@ -90,8 +93,8 @@ prune_releases() {
 }
 
 build_release() {
-  local src="$WORK_DIR/source" destination="$1" cache="$WORK_DIR/cache" home="$WORK_DIR/home"
-  mkdir -p "$src" "$cache" "$home"
+  local src="$WORK_DIR/source" destination="$1" home="$WORK_DIR/home"
+  mkdir -p "$src" "$home"
   cp -a "$TEMPLATE_DIR/." "$src/"
   # Container images never ship posts; the persistent volume owns them.
   rm -rf "$src/_posts"
@@ -102,8 +105,8 @@ build_release() {
   HOME="$home" \
   JEKYLL_ENV=production \
   BUNDLE_GEMFILE="$GEMFILE" \
-  BUNDLE_APP_CONFIG="$WORK_DIR/bundle" \
-  JEKYLL_CACHE_DIR="$cache" \
+  BUNDLE_PATH="$GEM_PATH" \
+  BUNDLE_FROZEN=true \
   bundle exec jekyll build \
     --config "$src/_config.yml,$src/_config.k8s.yml" \
     --source "$src" \
@@ -120,6 +123,7 @@ publish_release() {
   rm -f "$link_tmp"
   ln -s "releases/$(basename "$release_dir")" "$link_tmp"
   mv -T "$link_tmp" "$SITE_DIR/current"
+  PUBLISHED=1
   prune_releases "$release_dir" "$previous"
 }
 
