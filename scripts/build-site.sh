@@ -140,6 +140,10 @@ main() {
   fi
 
   RELEASE_DIR=$(mktemp -d "$RELEASES_DIR/release-$(date -u +%Y%m%d-%H%M%S)-XXXXXX")
+  # mktemp creates 0700, but the publisher is not the process that serves the
+  # site: nginx runs as a different uid and must traverse the release root.
+  # Jekyll output is public content, so widen the mode below the site root.
+  chmod 0755 "$RELEASE_DIR"
   build_release "$RELEASE_DIR"
   publish_release "$RELEASE_DIR" "$previous"
   echo "published release $(basename "$RELEASE_DIR")"
