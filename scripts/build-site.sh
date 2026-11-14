@@ -115,6 +115,26 @@ build_release() {
 
   [ -f "$destination/index.html" ] || { echo "error: index.html missing from build" >&2; return 1; }
   [ -f "$destination/feed-zh.xml" ] || { echo "error: feed-zh.xml missing from build" >&2; return 1; }
+
+  # jekyll-theme-cayman embeds @import url(fonts.googleapis.com/...) inside the
+  # compiled stylesheet. The site runs without public egress under a CSP that
+  # forbids remote stylesheets, so the import is dead weight that only logs a
+  # violation. Drop the single @import line; the font falls back to the stack.
+  local css
+  for css in "$destination"/assets/css/*.css; do
+    [ -f "$css" ] || continue
+    sed -i '/fonts\.googleapis\.com/d' "$css"
+  done
+  # Source maps embed the original Sass text, so the URL also has to be scrubbed
+  # there for the guard to mean what it says.
+  for css in "$destination"/assets/css/*.css.map; do
+    [ -f "$css" ] || continue
+    sed -i 's#https://fonts\.googleapis\.com/css?family=Open+Sans:400,700&amp;display=swap##g; s#https://fonts\.googleapis\.com/css?family=Open+Sans:400,700&display=swap##g' "$css"
+  done
+  if grep -rqs 'fonts.googleapis.com' "$destination"; then
+    echo "error: an external font reference survived the build" >&2
+    return 1
+  fi
 }
 
 publish_release() {
