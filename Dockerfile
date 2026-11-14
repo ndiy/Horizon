@@ -72,7 +72,8 @@ RUN set -eu; \
 COPY tests ./tests
 COPY pyproject.toml ./
 
-CMD ["python", "-m", "pytest", "-q", \
+# The dev extra lives in the project venv, not on the default interpreter path.
+CMD ["/app/.venv/bin/python", "-m", "pytest", "-q", \
      "tests/test_openai_unauthenticated.py", \
      "tests/test_main.py", \
      "tests/test_fetch_reporting.py"]
