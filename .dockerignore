@@ -22,10 +22,14 @@ env/
 .DS_Store
 
 # Documentation
-docs/
 *.md
 !README.md
 !profiles/**/*.md
+# The docs site tree is a build input for Dockerfile.site only; keep its
+# Markdown, SVG and asset files reachable while still excluding generated posts.
+!docs/**
+docs/_posts/
+docs/_site/
 
 # Local configuration, data, and runtime secrets
 .env
@@ -37,9 +41,9 @@ data/*
 *.egg-info/
 dist/
 build/
+.bundle/
+vendor/bundle/
 
 # Misc
 todo.txt
-*.svg
-*.tsx
 .claude/

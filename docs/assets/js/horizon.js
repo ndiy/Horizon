@@ -41,8 +41,34 @@
     });
   }
 
+  /** Languages the site publishes, from the head meta tag (defaults to zh,en) */
+  function publishedLanguages() {
+    var meta = document.querySelector('meta[name="horizon-languages"]');
+    var raw = meta && meta.getAttribute('content');
+    if (!raw) return ['zh', 'en'];
+    var langs = raw.split(',').map(function (item) {
+      return item.trim().toLowerCase();
+    }).filter(function (item) {
+      return item.length > 0;
+    });
+    return langs.length > 0 ? langs : ['zh', 'en'];
+  }
+
   /** Set up EN/中文 language toggle as a page-level control */
   function setupLanguageToggle() {
+    var languages = publishedLanguages();
+    var zhSection = document.getElementById('lang-zh');
+    var enSection = document.getElementById('lang-en');
+    var hasZh = languages.indexOf('zh') !== -1;
+    var hasEn = languages.indexOf('en') !== -1;
+
+    // Single-language site: show only that language, no toggle, no cross-links.
+    if (languages.length === 1) {
+      if (zhSection) zhSection.classList.remove('hidden');
+      if (enSection) enSection.classList.add('hidden');
+      return;
+    }
+
     // Create toggle buttons
     var toggle = document.createElement('div');
     toggle.className = 'lang-toggle';
@@ -64,7 +90,7 @@
     // Read saved preference, default to zh
     var saved = null;
     try { saved = localStorage.getItem('horizon-lang'); } catch (e) { /* noop */ }
-    var currentLang = saved === 'en' ? 'en' : 'zh';
+    var currentLang = saved === 'en' && hasEn ? 'en' : (hasZh ? 'zh' : languages[0]);
 
     function updateButtons(lang) {
       if (lang === 'en') {
@@ -77,9 +103,6 @@
     }
 
     // Index page: toggle lang-section visibility
-    var zhSection = document.getElementById('lang-zh');
-    var enSection = document.getElementById('lang-en');
-
     function showSection(lang) {
       if (!zhSection || !enSection) return;
       if (lang === 'en') {
@@ -104,6 +127,7 @@
     }
 
     function setLang(lang) {
+      if (languages.indexOf(lang) === -1) return;
       currentLang = lang;
       updateButtons(lang);
       try { localStorage.setItem('horizon-lang', lang); } catch (e) { /* noop */ }

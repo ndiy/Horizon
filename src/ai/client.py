@@ -4,6 +4,7 @@ import os
 import re
 from abc import ABC, abstractmethod
 from typing import Any, Dict, List, Optional
+from urllib.parse import urlsplit
 from openai import AsyncAzureOpenAI, AsyncOpenAI, APIStatusError as OpenAIStatusError
 from anthropic import AsyncAnthropic, BadRequestError as AnthropicBadRequestError
 from google import genai
@@ -79,6 +80,43 @@ def _looks_like_api_key_value(value: str) -> bool:
     if value.startswith(_SECRET_PREFIXES):
         return True
     return not bool(_ENV_VAR_RE.fullmatch(value))
+
+
+_OFFICIAL_OPENAI_HOST = "api.openai.com"
+
+
+def _explicit_gateway_base_url(config: AIConfig) -> Optional[str]:
+    """Return the configured base URL only when it was set explicitly in config.
+
+    Environment defaults and provider defaults never count: an empty
+    ``api_key_env`` must not turn the official API into an anonymous client
+    because a fallback URL happened to exist.
+    """
+    base_url = (config.base_url or "").strip()
+    return base_url or None
+
+
+def _is_unauthenticated_gateway(base_url: Optional[str]) -> bool:
+    """Whether ``base_url`` is a custom HTTP(S) gateway without embedded credentials.
+
+    Rejects the official OpenAI host, non-HTTP schemes, URLs with userinfo,
+    and anything unparseable, so an empty ``api_key_env`` can only mean
+    "this self-hosted gateway needs no key".
+    """
+    if not base_url:
+        return False
+    try:
+        parts = urlsplit(base_url)
+    except ValueError:
+        return False
+    if parts.scheme not in ("http", "https"):
+        return False
+    host = (parts.hostname or "").lower()
+    if not host:
+        return False
+    if parts.username is not None or parts.password is not None:
+        return False
+    return host != _OFFICIAL_OPENAI_HOST
 
 
 def _normalize_ollama_base_url(base_url: str) -> str:
@@ -254,11 +292,10 @@ class OpenAIClient(AIClient):
         """
         self.config = config
 
-        fallback = "no_key" if config.provider == AIProvider.OLLAMA else None
-        api_key = _resolve_api_key(config, fallback=fallback)
+        base_url = self._resolve_base_url(config)
+        api_key = self._resolve_api_key(config)
 
         kwargs = {"api_key": api_key}
-        base_url = self._resolve_base_url(config)
         if base_url:
             kwargs["base_url"] = base_url
 
@@ -289,6 +326,31 @@ class OpenAIClient(AIClient):
         if config.provider == AIProvider.OLLAMA and base_url:
             return _normalize_ollama_base_url(base_url)
         return base_url or None
+
+    @classmethod
+    def _resolve_api_key(cls, config: AIConfig) -> str:
+        """Resolve the client key, honoring explicit keyless gateway intent.
+
+        An empty ``ai.api_key_env`` on a custom OpenAI-compatible gateway is an
+        explicit statement that the endpoint needs no credential; the OpenAI SDK
+        then omits the ``Authorization`` header. Every other case keeps the
+        fail-closed behavior of ``_resolve_api_key``: a named env var must be set,
+        and the official OpenAI API still requires a real key.
+        """
+        if config.api_key_env:
+            return _resolve_api_key(config)
+
+        if (
+            config.provider == AIProvider.OPENAI
+            and _is_unauthenticated_gateway(_explicit_gateway_base_url(config))
+        ):
+            return ""
+
+        if config.provider == AIProvider.OPENAI:
+            raise ValueError(_missing_api_key_message(config))
+
+        fallback = "no_key" if config.provider == AIProvider.OLLAMA else None
+        return _resolve_api_key(config, fallback=fallback)
 
     async def complete(
         self,

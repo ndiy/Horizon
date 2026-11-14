@@ -1,0 +1,56 @@
+# Horizon site image: builds the Jekyll digest and publishes it atomically.
+#
+# Ruby comes from the local registry mirror (imported by the base-image
+# factory), all gems are installed at build time from the frozen lockfile, so
+# the runtime needs no network: a build in a `--network=none` container works.
+ARG RUBY_IMAGE=100.64.2.4:30095/base/ruby:pin-ff060227
+
+FROM ${RUBY_IMAGE}
+
+ENV DEBIAN_FRONTEND=noninteractive \
+    LANG=C.UTF-8 \
+    JEKYLL_ENV=production \
+    BUNDLE_APP_CONFIG=/opt/horizon/.bundle \
+    HORIZON_TEMPLATE_DIR=/opt/horizon/docs \
+    HORIZON_GEMFILE=/opt/horizon/Gemfile \
+    HORIZON_VERIFY_POSTS=/opt/horizon/scripts/verify-posts.rb \
+    HORIZON_BUILD_SITE=/opt/horizon/scripts/build-site.sh
+
+RUN set -eu; \
+    apt-get update -qq; \
+    apt-get install -y --no-install-recommends \
+      build-essential pkg-config libffi-dev ca-certificates util-linux; \
+    apt-get clean; \
+    rm -rf /var/lib/apt/lists/*
+
+WORKDIR /opt/horizon
+
+COPY Gemfile Gemfile.lock ./
+
+# Gems come from rubygems.org at build time only (the factory supplies its
+# egress proxy); the runtime executes offline against this frozen install.
+RUN set -eu; \
+    bundle config set --local path /opt/horizon/.gems; \
+    bundle config set --local frozen true; \
+    for attempt in 1 2 3; do \
+      bundle install --jobs 4 && break; \
+      [ "$attempt" -lt 3 ] || exit 1; \
+      echo "bundle install attempt ${attempt}/3 failed; retrying" >&2; \
+    done; \
+    bundle exec jekyll -v
+
+COPY docs ./docs
+COPY scripts ./scripts
+
+RUN set -eu; \
+    groupadd --gid 10001 horizon; \
+    useradd --create-home --uid 10001 --gid 10001 horizon; \
+    chown -R horizon:horizon /opt/horizon; \
+    chmod +x /opt/horizon/scripts/build-site.sh /opt/horizon/scripts/test-site-publish.sh \
+             /opt/horizon/scripts/verify-posts.rb
+
+# Static site only: no ports, no daemon, one shot per invocation.
+USER horizon
+
+ENTRYPOINT ["/opt/horizon/scripts/build-site.sh"]
+CMD []

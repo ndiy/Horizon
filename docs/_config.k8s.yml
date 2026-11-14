@@ -1,0 +1,24 @@
+# Kubernetes deployment overrides for the Horizon digest site.
+#
+# Merged on top of docs/_config.yml so the original GitHub Pages build (which
+# uses the checked-in subpath) keeps working unchanged.
+title: Horizon 中文日报
+description: 每天北京时间 08:00 自动采集 AI / 技术新闻与工程博客，生成中文日报
+lang: zh-CN
+timezone: Asia/Shanghai
+url: "https://horizon.great-wrasse.ts.net"
+baseurl: ""
+horizon_languages: "zh"
+
+exclude:
+  - "_config.k8s.yml"
+  - "feed-en.xml"
+  - "agent-skill.md"
+  - "chatgpt.md"
+  - "configuration.md"
+  - "extractors.md"
+  - "horizon-hub-design.md"
+  - "profiles.md"
+  - "scoring.md"
+  - "scrapers.md"
+  - "twitter-cookies.md"
