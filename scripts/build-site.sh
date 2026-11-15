@@ -10,6 +10,7 @@ set -euo pipefail
 TEMPLATE_DIR="${HORIZON_TEMPLATE_DIR:-/opt/horizon/docs}"
 GEMFILE="${HORIZON_GEMFILE:-/opt/horizon/Gemfile}"
 VERIFY_SCRIPT="${HORIZON_VERIFY_POSTS:-/opt/horizon/scripts/verify-posts.rb}"
+LINK_SCRIPT="${HORIZON_CHECK_LINKS:-/opt/horizon/scripts/check-site-links.rb}"
 GEM_PATH="${HORIZON_GEM_PATH:-/opt/horizon/.gems}"
 LOCK_TIMEOUT="${HORIZON_PUBLISH_LOCK_TIMEOUT:-900}"
 
@@ -135,6 +136,11 @@ build_release() {
     echo "error: an external font reference survived the build" >&2
     return 1
   fi
+
+  # A release is only worth publishing if every piece of markup points at a file
+  # inside it. Jekyll emits links for excluded pages without failing the build,
+  # so this is the only place that defect can be caught.
+  ruby "$LINK_SCRIPT" "$destination" || return 1
 }
 
 publish_release() {

@@ -11,6 +11,7 @@ GEMFILE="${HORIZON_GEMFILE:-/opt/horizon/Gemfile}"
 BUILD_SCRIPT="${HORIZON_BUILD_SITE:-/opt/horizon/scripts/build-site.sh}"
 VERIFY_SCRIPT="${HORIZON_VERIFY_POSTS:-/opt/horizon/scripts/verify-posts.rb}"
 FEED_SCRIPT="${HORIZON_FEED_ENTRIES:-/opt/horizon/scripts/feed-entries.rb}"
+LINK_SCRIPT="${HORIZON_CHECK_LINKS:-/opt/horizon/scripts/check-site-links.rb}"
 
 WORK=$(mktemp -d "${TMPDIR:-/tmp}/horizon-site-test.XXXXXX")
 SITE="$WORK/site"
@@ -25,6 +26,7 @@ export HORIZON_TEMPLATE_DIR="$TEMPLATE_DIR"
 export HORIZON_GEMFILE="$GEMFILE"
 export HORIZON_VERIFY_POSTS="$VERIFY_SCRIPT"
 export HORIZON_FEED_ENTRIES="$FEED_SCRIPT"
+export HORIZON_CHECK_LINKS="$LINK_SCRIPT"
 
 fail() { echo "FAIL: $*" >&2; exit 1; }
 
@@ -118,7 +120,18 @@ echo "== --initial-only is a no-op once published =="
 build --initial-only
 [ "$(current_target)" = "$before" ] || fail "--initial-only replaced the published release"
 
-# --- 6. retention keeps current + previous only ---------------------------
+# --- 6b. a dead internal link is refused before publishing ----------------
+echo "== a release with a dead internal link is refused =="
+# Jekyll exits 0 while emitting links for pages the config excludes; the guard
+# has to catch that on the built tree, or the site ships 404s from its own index.
+BROKEN="$WORK/broken-template"
+cp -a "$TEMPLATE_DIR" "$BROKEN"
+printf '\n<a href="/no-such-page">dead</a>\n' >> "$BROKEN/index.md"
+if HORIZON_TEMPLATE_DIR="$BROKEN" build; then fail "publish accepted a release with a dead internal link"; fi
+[ "$(current_target)" = "$before" ] || fail "current moved after a dead-link build"
+[ -f "$SITE/$before/index.html" ] || fail "previous release was destroyed"
+
+# --- 7. retention keeps current + previous only ---------------------------
 echo "== release retention =="
 rm -f "$POSTS/2026-11-17-summary-zh.md" "$SUMMARIES/horizon-2026-11-15-zh.md"
 write_pair "2026-11-16"
